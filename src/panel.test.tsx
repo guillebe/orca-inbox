@@ -183,7 +183,7 @@ test('the list shows the agent state and groups several workspaces', async () =>
   })
   const view = await mount(panel, { host })
   assert.ok(view.find({ text: 'acme/api' }))
-  assert.ok(view.find({ text: /DB work · acme\/web-app · agent waiting/ }))
+  assert.ok(view.find({ text: /DB work · agent waiting/ }))
   assert.deepEqual(view.warnings, [])
   await view.unmount()
 })

@@ -308,20 +308,24 @@ function ThreadView({ thread }: { thread: Thread }) {
   )
 }
 
-function describe(item: ThreadSummary): string {
-  if (item.state !== 'open') return `${item.source} · ${stateLabel(item.kind, item.state)}`
+/** The line under a thread's title. Under a workspace heading the workspace is not repeated. */
+function describe(item: ThreadSummary, grouped: boolean): string {
+  const suffix = item.workspace ? ` · ${item.workspace}` : ''
+  const source = grouped && suffix && item.source.endsWith(suffix) ? item.source.slice(0, -suffix.length) : item.source
+  if (item.state !== 'open') return `${source} · ${stateLabel(item.kind, item.state)}`
   const agent = agentStateLabel(item.agentState)
-  return agent ? `${item.source} · ${agent}` : item.source
+  return agent ? `${source} · ${agent}` : source
 }
 
-function ThreadItems({ items, label }: { items: ThreadSummary[]; label: string }) {
+function ThreadItems({ items, label, grouped }: { items: ThreadSummary[]; label: string; grouped: boolean }) {
   return (
     <List label={label}>
       {items.map((item) => (
         <ListItem
+          key={item.id}
           icon={KIND_ICON[item.kind]}
           title={item.title}
-          description={describe(item)}
+          description={describe(item, grouped)}
           onPress={() => openThread(item.id)}
         />
       ))}
@@ -339,7 +343,7 @@ function ThreadList({ items }: { items: ThreadSummary[] }) {
   }
   const groups = groupByWorkspace(items)
   // One workspace needs no headings; several get one each, so parallel work reads apart.
-  if (groups.length < 2) return ThreadItems({ items, label: 'Threads' })
+  if (groups.length < 2) return ThreadItems({ items, label: 'Threads', grouped: false })
   return (
     <Stack gap="md">
       {groups.map((group) => (
@@ -347,7 +351,7 @@ function ThreadList({ items }: { items: ThreadSummary[] }) {
           <Text size="xs" weight="semibold" muted>
             {group.workspace}
           </Text>
-          {ThreadItems({ items: group.items, label: group.workspace })}
+          {ThreadItems({ items: group.items, label: group.workspace, grouped: true })}
         </Stack>
       ))}
     </Stack>

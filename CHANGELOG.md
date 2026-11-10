@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-10
+
 ### Added
 
 - Answer from the agent's terminal as well as the panel: the agent restates the question with
@@ -21,6 +23,12 @@ All notable changes are listed here. The format follows
 - The back button reads "← Inbox" instead of using an upward chevron.
 - Thread layout: the session text is shown in full on its own line, sections are separated, and
   option descriptions show under each option.
+- Under a workspace heading, threads no longer repeat the workspace name.
+
+### Fixed
+
+- Session titles no longer start with the spinner glyph agents animate in their tab title.
+- A closed tab is recognized as a closed session.
 
 ## [0.1.0] - 2026-11-10
 
@@ -34,5 +42,6 @@ All notable changes are listed here. The format follows
 - Safeguards: fail open past 1.5 s, no replies into a blocked prompt, rollback when a reply is not
   delivered, dedupe of retried calls, and text caps under Orca's render limits.
 
-[Unreleased]: https://github.com/guillebe/orca-inbox/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/guillebe/orca-inbox/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/guillebe/orca-inbox/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/guillebe/orca-inbox/releases/tag/v0.1.0

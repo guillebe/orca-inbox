@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "inbox",
   "name": "Inbox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Questions and plans from Claude Code agents, answered when you have time while the agent keeps working.",
   "license": "MIT",
   "homepage": "https://github.com/guillebe/orca-inbox",
