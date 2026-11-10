@@ -19,6 +19,8 @@ All notable changes are listed here. The format follows
 ### Changed
 
 - The back button reads "← Inbox" instead of using an upward chevron.
+- Thread layout: the session text is shown in full on its own line, sections are separated, and
+  option descriptions show under each option.
 
 ## [0.1.0] - 2026-11-10
 
