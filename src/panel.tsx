@@ -9,6 +9,7 @@ import {
   Checkbox,
   Code,
   EmptyState,
+  Input,
   Heading,
   List,
   ListItem,
@@ -27,7 +28,16 @@ import {
   update,
   type PanelContext
 } from 'orca'
-import { allAnswered, markdownChunks, type Question, type Response, type Thread, type ThreadSummary } from './model'
+import {
+  agentStateLabel,
+  allAnswered,
+  groupByWorkspace,
+  markdownChunks,
+  type Question,
+  type Response,
+  type Thread,
+  type ThreadSummary
+} from './model'
 import type { RespondResult } from './protocol'
 
 const summaries = atom<ThreadSummary[] | null>(null)
@@ -36,6 +46,10 @@ const selectedId = atom<string | null>(null)
 const selected = atom<Thread | null>(null)
 /** Chosen option labels per question index. */
 const picks = atom<string[][]>([])
+/** Text typed in each question's "Other" field, by question index. */
+const others = atom<string[]>([])
+/** Whether the open thread's agent terminal still exists; null until known or when unknowable. */
+const sessionAlive = atom<boolean | null>(null)
 const draft = atom('')
 const failure = atom<string | null>(null)
 const sending = atom(false)
@@ -67,11 +81,30 @@ async function openThread(id: string): Promise<void> {
   set(selectedId, id)
   set(selected, null)
   set(picks, [])
+  set(others, [])
+  set(sessionAlive, null)
   set(draft, '')
   set(failure, null)
   const thread = await plugin.request('inbox.get', { id })
   // A slower answer for a thread the person already left must not replace the one now open.
-  if (read(selectedId) === id) set(selected, thread)
+  if (read(selectedId) !== id) return
+  set(selected, thread)
+  if (thread?.status.state !== 'open') return
+  const { alive } = await plugin.request('inbox.alive', { id })
+  if (read(selectedId) === id) set(sessionAlive, alive)
+}
+
+async function clearClosed(): Promise<void> {
+  await plugin.request('inbox.clearClosed')
+  await refresh()
+}
+
+function typeOther(index: number, value: string): void {
+  update(others, (previous) => {
+    const next = [...previous]
+    next[index] = value
+    return next
+  })
 }
 
 function back(): void {
@@ -149,12 +182,19 @@ function QuestionField({ question, index }: { question: Question; index: number 
           onChange={(value) => choose(index, value, false, true)}
         />
       )}
+      <Input
+        label={question.multiSelect ? 'Other (added to your picks)' : 'Other (replaces your pick)'}
+        placeholder="Type your own answer"
+        value={read(others)[index] ?? ''}
+        onChange={(value) => typeOther(index, value)}
+      />
     </Stack>
   )
 }
 
 function OpenActions({ thread }: { thread: Thread }) {
-  const busy = read(sending)
+  // A closed session can no longer take a reply; sending would only fail.
+  const busy = read(sending) || read(sessionAlive) === false
   const text = read(draft)
   if (thread.body.kind === 'question') {
     return (
@@ -163,8 +203,8 @@ function OpenActions({ thread }: { thread: Thread }) {
         <Row gap="xs">
           <Button
             icon="next"
-            disabled={busy || !allAnswered(thread.body.questions, read(picks))}
-            onPress={() => respond({ kind: 'answers', picks: read(picks), note: read(draft) })}
+            disabled={busy || !allAnswered(thread.body.questions, read(picks), read(others))}
+            onPress={() => respond({ kind: 'answers', picks: read(picks), others: read(others), note: read(draft) })}
           >
             Send
           </Button>
@@ -200,7 +240,9 @@ function ThreadView({ thread }: { thread: Thread }) {
   const error = read(failure)
   const { body, status } = thread
   // The worker already worded the origin for the list; reuse it rather than duplicate the rule.
-  const source = read(summaries)?.find((item) => item.id === thread.id)?.source
+  const summary = read(summaries)?.find((item) => item.id === thread.id)
+  const source = summary?.source
+  const agentState = agentStateLabel(summary?.agentState ?? null)
   return (
     <Stack gap="md">
       <Row justify="between">
@@ -214,6 +256,7 @@ function ThreadView({ thread }: { thread: Thread }) {
           <Row gap="xs">
             <Badge>{thread.origin.agent}</Badge>
             <Text muted size="sm" truncate>{source}</Text>
+            {agentState ? <Badge tone={summary?.agentState === 'blocked' ? 'warning' : 'neutral'}>{agentState}</Badge> : null}
           </Row>
           <Button variant="outline" size="sm" icon="terminal" onPress={focusSession}>
             Go to session
@@ -244,6 +287,11 @@ function ThreadView({ thread }: { thread: Thread }) {
           </Text>
         </Callout>
       ) : null}
+      {status.state === 'open' && read(sessionAlive) === false ? (
+        <Callout tone="warning" title="This session is closed">
+          <Text>Its terminal no longer exists, so the agent cannot get an answer. Dismiss the thread.</Text>
+        </Callout>
+      ) : null}
       {error ? <Callout tone="danger">{error}</Callout> : null}
       {status.state === 'open' ? OpenActions({ thread }) : null}
       {status.state === 'answered' ? (
@@ -257,6 +305,27 @@ function ThreadView({ thread }: { thread: Thread }) {
   )
 }
 
+function describe(item: ThreadSummary): string {
+  if (item.state !== 'open') return `${item.source} · ${stateLabel(item.kind, item.state)}`
+  const agent = agentStateLabel(item.agentState)
+  return agent ? `${item.source} · ${agent}` : item.source
+}
+
+function ThreadItems({ items, label }: { items: ThreadSummary[]; label: string }) {
+  return (
+    <List label={label}>
+      {items.map((item) => (
+        <ListItem
+          icon={KIND_ICON[item.kind]}
+          title={item.title}
+          description={describe(item)}
+          onPress={() => openThread(item.id)}
+        />
+      ))}
+    </List>
+  )
+}
+
 function ThreadList({ items }: { items: ThreadSummary[] }) {
   if (items.length === 0) {
     return read(view) === 'open' ? (
@@ -265,17 +334,20 @@ function ThreadList({ items }: { items: ThreadSummary[] }) {
       <EmptyState icon="info" title="No closed threads yet" />
     )
   }
+  const groups = groupByWorkspace(items)
+  // One workspace needs no headings; several get one each, so parallel work reads apart.
+  if (groups.length < 2) return ThreadItems({ items, label: 'Threads' })
   return (
-    <List label="Threads">
-      {items.map((item) => (
-        <ListItem
-          icon={KIND_ICON[item.kind]}
-          title={item.title}
-          description={item.state === 'open' ? item.source : `${item.source} · ${stateLabel(item.kind, item.state)}`}
-          onPress={() => openThread(item.id)}
-        />
+    <Stack gap="md">
+      {groups.map((group) => (
+        <Stack gap="xs">
+          <Text size="xs" weight="semibold" muted>
+            {group.workspace}
+          </Text>
+          {ThreadItems({ items: group.items, label: group.workspace })}
+        </Stack>
       ))}
-    </List>
+    </Stack>
   )
 }
 
@@ -296,7 +368,16 @@ export default function Panel() {
           {ThreadList({ items: open })}
         </Tab>
         <Tab value="closed" label="Closed">
-          {ThreadList({ items: closed })}
+          <Stack gap="sm">
+            {closed.length > 0 ? (
+              <Row justify="end">
+                <Button variant="ghost" size="sm" icon="delete" onPress={clearClosed}>
+                  Clear closed
+                </Button>
+              </Row>
+            ) : null}
+            {ThreadList({ items: closed })}
+          </Stack>
         </Tab>
       </Tabs>
     </Stack>

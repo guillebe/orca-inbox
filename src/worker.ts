@@ -16,6 +16,7 @@ import {
   hasOpenAttention,
   isCapturableTool,
   openCount,
+  pruneClosed,
   readApprovals,
   readStringList,
   readThreads,
@@ -25,6 +26,7 @@ import {
   retitleThreads,
   summarize,
   trackBlocked,
+  type AgentState,
   type CaptureSettings,
   type Origin,
   type Thread,
@@ -53,12 +55,34 @@ const BUNDLED_ORCA_CLI = '/Applications/Orca.app/Contents/Resources/bin/orca'
  * failure: the caller has already opened the workspace.
  */
 function switchToTerminal(terminalId: string): Promise<boolean> {
-  if (!terminalId.startsWith('term_')) return Promise.resolve(false)
+  return runOrcaCli(terminalId, ['terminal', 'switch']).then((answer) => answer?.ok === true)
+}
+
+/**
+ * Whether the agent's terminal still exists: true, false (Orca calls the handle stale), or null
+ * when it cannot tell. Uses the CLI for the same reason as `switchToTerminal`.
+ */
+async function terminalAlive(terminalId: string): Promise<boolean | null> {
+  const answer = await runOrcaCli(terminalId, ['terminal', 'show'])
+  if (!answer) return null
+  if (answer.ok) return true
+  return answer.error?.code === 'terminal_handle_stale' ? false : null
+}
+
+type CliAnswer = { ok: boolean; error?: { code?: string } }
+
+/** Runs `orca <args> --terminal <id> --json` and parses its answer; null when it could not run. */
+function runOrcaCli(terminalId: string, args: string[]): Promise<CliAnswer | null> {
+  if (!terminalId.startsWith('term_')) return Promise.resolve(null)
   const cli = existsSync(BUNDLED_ORCA_CLI) ? BUNDLED_ORCA_CLI : 'orca'
   return new Promise((resolve) => {
-    execFile(cli, ['terminal', 'switch', '--terminal', terminalId, '--json'], { timeout: 5000 }, (error) =>
-      resolve(!error)
-    )
+    execFile(cli, [...args, '--terminal', terminalId, '--json'], { timeout: 5000 }, (_error, stdout) => {
+      try {
+        resolve(JSON.parse(String(stdout)) as CliAnswer)
+      } catch {
+        resolve(null)
+      }
+    })
   })
 }
 
@@ -98,7 +122,8 @@ export default function activate(orca: OrcaWorkerApi): void {
       .catch(() => undefined)
   }
 
-  async function saveThreads(threads: Thread[]): Promise<void> {
+  async function saveThreads(all: Thread[]): Promise<void> {
+    const threads = pruneClosed(all, Date.now())
     await orca.storage.set(THREADS, threads)
     orca.panels.post('inbox.changed', { open: openCount(threads) })
     showCount(threads)
@@ -138,6 +163,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   // When each agent last went idle (waiting or done), to tell an answer typed in its terminal.
   // In memory: after a worker restart a terminal answer is only noticed from the next idle on.
   const idleSince = new Map<string, number>()
+  // Each agent's latest status, shown beside its open threads. Seeded from `agents.list` below.
+  const agentStates = new Map<string, AgentState>()
 
   /** Looks the title up after the hook has answered, so the hook never waits on it. */
   function fillTitleLater(terminalId: string): void {
@@ -215,6 +242,8 @@ export default function activate(orca: OrcaWorkerApi): void {
     const terminalId = event.terminalId
     if (!terminalId) return
     if (event.title) titles.set(terminalId, event.title)
+    const stateChanged = agentStates.get(terminalId) !== event.state
+    agentStates.set(terminalId, event.state)
     // Read before this event updates it: when did the agent last stop and wait?
     const wentIdleAt = idleSince.get(terminalId)
     if (event.state === 'waiting' || event.state === 'done') idleSince.set(terminalId, Date.now())
@@ -250,6 +279,10 @@ export default function activate(orca: OrcaWorkerApi): void {
         }
       }
       if (changed) await saveThreads(threads)
+      else if (stateChanged && threads.some((thread) => thread.status.state === 'open' && thread.origin.terminalId === terminalId)) {
+        // Only the agent's state moved: open panels redraw it beside its threads.
+        orca.panels.post('inbox.changed', { open: openCount(threads) })
+      }
       if (event.state !== 'blocked' || hasOpenAttention(threads, terminalId)) return
       const settings = await loadSettings()
       if (!settings.trackBlocked) return
@@ -264,7 +297,23 @@ export default function activate(orca: OrcaWorkerApi): void {
     })
   })
 
-  orca.panels.handle('inbox.list', async () => (await loadThreads()).map(summarize))
+  orca.panels.handle('inbox.list', async () =>
+    (await loadThreads()).map((thread) => summarize(thread, agentStates.get(thread.origin.terminalId) ?? null))
+  )
+
+  orca.panels.handle('inbox.alive', async ({ id }) => {
+    const thread = (await loadThreads()).find((item) => item.id === id)
+    return { alive: thread ? await terminalAlive(thread.origin.terminalId) : null }
+  })
+
+  orca.panels.handle('inbox.clearClosed', () =>
+    serially(async () => {
+      const threads = await loadThreads()
+      const open = threads.filter((thread) => thread.status.state === 'open')
+      if (open.length !== threads.length) await saveThreads(open)
+      return { removed: threads.length - open.length }
+    })
+  )
 
   orca.panels.handle('inbox.get', async ({ id }) => (await loadThreads()).find((thread) => thread.id === id) ?? null)
 
@@ -328,6 +377,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     let changed = false
     const { agents } = await orca.host.call('agents.list', {}).catch(() => ({ agents: [] }))
     for (const agent of agents) {
+      if (agent.terminalId && !agentStates.has(agent.terminalId)) agentStates.set(agent.terminalId, agent.state)
       const retitled = agent.terminalId && agent.title ? retitleThreads(threads, agent.terminalId, agent.title) : null
       if (retitled) [threads, changed] = [retitled, true]
     }

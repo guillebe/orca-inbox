@@ -37,6 +37,9 @@ export type Thread = {
   status: ThreadStatus
 }
 
+/** What Orca last reported about the agent behind a thread. */
+export type AgentState = 'working' | 'blocked' | 'waiting' | 'done'
+
 export type ThreadSummary = {
   id: string
   createdAt: number
@@ -44,12 +47,17 @@ export type ThreadSummary = {
   title: string
   /** Which session and workspace asked, for the list. */
   source: string
+  /** The workspace folder alone, to group the list; null when unknown. */
+  workspace: string | null
   state: ThreadStatus['state']
+  /** Null when no status event arrived for that agent since the worker started. */
+  agentState: AgentState | null
 }
 
 /** What the person sends from the panel; its shape follows the thread kind. */
 export type Response =
-  | { kind: 'answers'; picks: string[][]; note: string }
+  /** `others[i]`: text typed in question i's "Other" field, as Claude Code's own prompt offers. */
+  | { kind: 'answers'; picks: string[][]; others?: string[]; note: string }
   | { kind: 'plan'; decision: 'approve' | 'revise'; feedback: string }
   | { kind: 'text'; text: string }
 
@@ -234,12 +242,31 @@ export function oneLine(text: string): string {
 }
 
 /** True when every question has at least one picked option: the only answers worth sending. */
-export const allAnswered = (questions: readonly Question[], picks: readonly string[][]): boolean =>
-  questions.every((_, index) => (picks[index]?.length ?? 0) > 0)
+/**
+ * One question's answer as the agent reads it; null when nothing was picked or typed. Typed
+ * text is quoted so the agent can tell it from an option label, and on a single-choice
+ * question it replaces the pick, as "Other" does in Claude Code's own prompt.
+ */
+export function questionAnswer(question: Question, picks: readonly string[], other: string): string | null {
+  const typed = oneLine(other)
+  const quoted = typed ? `"${typed}"` : null
+  if (!question.multiSelect) return quoted ?? picks[0] ?? null
+  const parts = quoted ? [...picks, quoted] : [...picks]
+  return parts.length > 0 ? parts.join(', ') : null
+}
 
-function formatAnswers(thread: Thread, questions: Question[], picks: string[][], note: string): string | null {
-  if (!allAnswered(questions, picks)) return null
-  const parts = questions.map((question, index) => `«${question.question}» → ${(picks[index] ?? []).join(', ')}`)
+/** True when every question has an answer, picked or typed: the only answers worth sending. */
+export const allAnswered = (
+  questions: readonly Question[],
+  picks: readonly string[][],
+  others: readonly string[] = []
+): boolean => questions.every((question, index) => questionAnswer(question, picks[index] ?? [], others[index] ?? '') !== null)
+
+function formatAnswers(thread: Thread, questions: Question[], picks: string[][], others: string[], note: string): string | null {
+  if (!allAnswered(questions, picks, others)) return null
+  const parts = questions.map(
+    (question, index) => `«${question.question}» → ${questionAnswer(question, picks[index] ?? [], others[index] ?? '')}`
+  )
   const trimmed = oneLine(note)
   if (trimmed) parts.push(`Note: ${trimmed}`)
   return oneLine(`[Orca Inbox] Answers to thread ${thread.id}: ${parts.join(' | ')}`)
@@ -258,7 +285,7 @@ function formatPlan(thread: Thread, decision: 'approve' | 'revise', feedback: st
 export function formatReply(thread: Thread, response: Response): string | null {
   const { body } = thread
   if (body.kind === 'question' && response.kind === 'answers') {
-    return formatAnswers(thread, body.questions, response.picks, response.note)
+    return formatAnswers(thread, body.questions, response.picks, response.others ?? [], response.note)
   }
   if (body.kind === 'plan' && response.kind === 'plan') {
     return formatPlan(thread, response.decision, response.feedback)
@@ -285,14 +312,52 @@ export function threadTitle(body: ThreadBody): string {
   }
 }
 
-export function summarize(thread: Thread): ThreadSummary {
+export function summarize(thread: Thread, agentState: AgentState | null = null): ThreadSummary {
   return {
     id: thread.id,
     createdAt: thread.createdAt,
     kind: thread.body.kind,
     title: threadTitle(thread.body),
     source: describeOrigin(thread.origin),
-    state: thread.status.state
+    workspace: workspaceLabel(thread.origin.workspaceId),
+    state: thread.status.state,
+    agentState: thread.status.state === 'open' ? agentState : null
+  }
+}
+
+/** Closed threads are kept this long, so the Closed tab stays a recent history. */
+export const CLOSED_RETENTION_MS = 7 * 24 * 60 * 60_000
+
+/** Drops closed threads older than the retention; open ones always stay. */
+export function pruneClosed(threads: readonly Thread[], now: number, maxAgeMs: number = CLOSED_RETENTION_MS): Thread[] {
+  return threads.filter((thread) => thread.status.state === 'open' || now - thread.status.at < maxAgeMs)
+}
+
+/** Groups summaries by workspace in first-seen order; threads with no workspace go last. */
+export function groupByWorkspace(items: readonly ThreadSummary[]): { workspace: string; items: ThreadSummary[] }[] {
+  const groups = new Map<string, ThreadSummary[]>()
+  for (const item of items) {
+    const key = item.workspace ?? 'Other'
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  const other = groups.get('Other')
+  groups.delete('Other')
+  const ordered = [...groups].map(([workspace, grouped]) => ({ workspace, items: grouped }))
+  return other ? [...ordered, { workspace: 'Other', items: other }] : ordered
+}
+
+/** How the agent's state reads next to an open thread. */
+export function agentStateLabel(state: AgentState | null): string | null {
+  switch (state) {
+    case 'working':
+      return 'agent working'
+    case 'blocked':
+      return 'agent blocked'
+    case 'waiting':
+    case 'done':
+      return 'agent waiting'
+    default:
+      return null
   }
 }
 

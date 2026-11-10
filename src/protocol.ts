@@ -15,6 +15,10 @@ declare module 'orca' {
     'inbox.respond': { input: { id: string; response: Response }; output: RespondResult }
     /** Shows the agent's workspace and brings its terminal tab to the front. */
     'inbox.focus': { input: { id: string }; output: { ok: boolean } }
+    /** Whether the thread's agent terminal still exists; null when Orca cannot tell. */
+    'inbox.alive': { input: { id: string }; output: { alive: boolean | null } }
+    /** Removes every closed thread; open ones stay. */
+    'inbox.clearClosed': { output: { removed: number } }
     /** Closes a thread without telling the agent. */
     'inbox.dismiss': { input: { id: string }; output: { ok: boolean } }
   }

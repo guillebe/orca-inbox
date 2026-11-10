@@ -199,3 +199,17 @@ test('a plan reviewed in the terminal lets its next ExitPlanMode stay there', as
   assert.equal((await worker.hooks.fire('agent.tool.before', plan)).kind, 'continue')
   await worker.deactivate()
 })
+
+test('the list carries each agent state, and clear closed keeps open threads', async () => {
+  const host = mockHost()
+  const worker = await mountWorker(main, { host })
+  await worker.hooks.fire('agent.tool.before', question)
+  await worker.emit('agent.status.changed', { workspaceId: 'w1', paneKey: 'p', terminalId: 't1', state: 'waiting', receivedAt: 1 })
+  assert.equal((await worker.request('inbox.list'))[0]?.agentState, 'waiting')
+  await worker.emit('agent.status.changed', { workspaceId: 'w2', paneKey: 'q', terminalId: 't7', state: 'blocked', receivedAt: 2 })
+  await worker.emit('agent.status.changed', { workspaceId: 'w2', paneKey: 'q', terminalId: 't7', state: 'working', receivedAt: 3 })
+  assert.deepEqual(await worker.request('inbox.clearClosed'), { removed: 1 })
+  assert.deepEqual((await worker.request('inbox.list')).map((item) => item.state), ['open'])
+  assert.deepEqual(await worker.request('inbox.alive', { id: 'missing' }), { alive: null })
+  await worker.deactivate()
+})

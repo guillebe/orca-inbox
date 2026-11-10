@@ -10,6 +10,11 @@ All notable changes are listed here. The format follows
 
 - Answer from the agent's terminal as well as the panel: the agent restates the question with
   numbered options, and the Inbox thread closes on its own once you reply there.
+- An "Other" field on every question, for an answer of your own.
+- The agent's state (working, waiting, blocked) beside each open thread.
+- A warning when a thread's session is closed, with sending disabled.
+- **Clear closed** in the Closed tab; closed threads older than 7 days are removed on their own.
+- Threads grouped by workspace when several workspaces have open threads.
 
 ### Changed
 

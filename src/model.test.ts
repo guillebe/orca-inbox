@@ -1,6 +1,13 @@
 import { assert, test } from 'orca/testing'
 import {
   activeApprovalTerminals,
+  allAnswered,
+  agentStateLabel,
+  CLOSED_RETENTION_MS,
+  groupByWorkspace,
+  pruneClosed,
+  questionAnswer,
+  summarize,
   denyReason,
   clip,
   LIMITS,
@@ -186,4 +193,32 @@ test('the deny reason asks the agent to restate the question in its terminal', (
   const reason = denyReason(thread({}))
   assert.match(reason, /repeats the question and numbers its options/)
   assert.match(reason, /typed directly in this terminal/)
+})
+
+test('Other text joins or replaces the picks', () => {
+  const single = { question: 'Q?', multiSelect: false, options: [{ label: 'a' }] }
+  const multi = { ...single, multiSelect: true }
+  assert.equal(questionAnswer(single, ['a'], ''), 'a')
+  assert.equal(questionAnswer(single, ['a'], 'mine'), '"mine"')
+  assert.equal(questionAnswer(multi, ['a'], 'mine'), 'a, "mine"')
+  assert.equal(questionAnswer(multi, [], '  '), null)
+  assert.ok(allAnswered([single], [], ['typed']))
+})
+
+test('closed threads past the retention are dropped, open ones never', () => {
+  const old = thread({ id: 'old', status: { state: 'dismissed', at: 0 } })
+  const recent = thread({ id: 'recent', status: { state: 'dismissed', at: CLOSED_RETENTION_MS } })
+  const open = thread({ id: 'open', createdAt: 0 })
+  const kept = pruneClosed([old, recent, open], CLOSED_RETENTION_MS + 1).map((item) => item.id)
+  assert.deepEqual(kept, ['recent', 'open'])
+})
+
+test('summaries group by workspace with unknown ones last', () => {
+  const a = summarize(thread({ id: 'a', origin: { agent: 'claude', terminalId: 't', workspaceId: null } }))
+  const b = summarize(thread({ id: 'b', origin: { agent: 'claude', terminalId: 't', workspaceId: 'r::/x/acme/api' } }))
+  assert.deepEqual(
+    groupByWorkspace([a, b]).map((group) => [group.workspace, group.items.map((item) => item.id)]),
+    [['acme/api', ['b']], ['Other', ['a']]]
+  )
+  assert.equal(agentStateLabel('done'), 'agent waiting')
 })

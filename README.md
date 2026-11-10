@@ -23,8 +23,11 @@ it as its next message.
 - **Answer from anywhere** — the agent also repeats the question with numbered options in its
   terminal, so you can reply there (from a phone, say) with just a number. The Inbox thread then
   closes on its own.
-- **Context** — every thread shows the session's task and workspace; **Go to session** jumps to the
-  agent's terminal.
+- **Context** — every thread shows the session's task, its workspace and whether the agent is
+  working, waiting or blocked; **Go to session** jumps to the agent's terminal. Threads group by
+  workspace, and a closed session is flagged before you write a reply it cannot get.
+- **Your own answer** — an "Other" field on every question, as in Claude Code's own prompt.
+- **Tidy history** — closed threads older than 7 days go away on their own, or use **Clear closed**.
 - **Status bar count and desktop notifications**, each switchable in Settings → Plugins → Inbox.
 
 ## Requirements
