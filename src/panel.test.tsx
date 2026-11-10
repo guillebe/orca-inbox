@@ -29,7 +29,7 @@ test('lists open threads and sends the picked answer', async () => {
   })
   const view = await mount(panel, { host })
   await view.press({ text: /Which DB\?/ })
-  await view.select({ label: 'Which DB?' }, 'SQLite')
+  await view.toggle({ label: 'SQLite' })
   await view.press({ text: 'Send' })
   assert.deepEqual(sent, [{ kind: 'answers', picks: [['SQLite']], others: [], note: '' }])
   assert.deepEqual(view.warnings, [])
@@ -49,7 +49,7 @@ test('shows why a reply was not delivered', async () => {
   })
   const view = await mount(panel, { host })
   await view.press({ text: /Which DB\?/ })
-  await view.select({ label: 'Which DB?' }, 'Postgres')
+  await view.toggle({ label: 'Postgres' })
   await view.press({ text: 'Send' })
   assert.ok(view.find({ text: /did not take the reply/ }))
   await view.unmount()
@@ -113,7 +113,7 @@ test('send stays disabled until every question has an answer', async () => {
   const view = await mount(panel, { host })
   await view.press({ text: /Which DB\?/ })
   assert.equal(view.find({ role: 'button', text: 'Send' })?.props.disabled, true)
-  await view.select({ label: 'Which DB?' }, 'Postgres')
+  await view.toggle({ label: 'Postgres' })
   assert.equal(view.find({ role: 'button', text: 'Send' })?.props.disabled, false)
   await view.unmount()
 })
@@ -128,7 +128,7 @@ test('the back button returns to the list', async () => {
   })
   const view = await mount(panel, { host })
   await view.press({ text: /Which DB\?/ })
-  await view.press({ role: 'button', text: '← Inbox' })
+  await view.press({ text: '← Inbox' })
   assert.ok(view.find({ text: 'Open' }))
   assert.deepEqual(view.warnings, [])
   await view.unmount()
@@ -166,7 +166,7 @@ test('a closed session says so and blocks sending', async () => {
   })
   const view = await mount(panel, { host })
   await view.press({ text: /Which DB\?/ })
-  await view.select({ label: 'Which DB?' }, 'SQLite')
+  await view.toggle({ label: 'SQLite' })
   assert.ok(view.find({ text: /no longer exists/ }))
   assert.equal(view.find({ role: 'button', text: 'Send' })?.props.disabled, true)
   await view.unmount()
@@ -204,5 +204,29 @@ test('clear closed asks the worker to drop closed threads', async () => {
   await view.press({ text: 'Clear closed' })
   assert.equal(cleared, 1)
   assert.ok(view.find({ text: 'No closed threads yet' }))
+  await view.unmount()
+})
+
+test('a single-choice question keeps one pick', async () => {
+  const sent: Response[] = []
+  const host = mockHost({
+    requests: {
+      'inbox.list': () => listed(),
+      'inbox.get': () => thread,
+      'inbox.alive': () => ({ alive: true }),
+      'inbox.respond': ({ response }) => {
+        sent.push(response)
+        return { ok: true }
+      }
+    }
+  })
+  const view = await mount(panel, { host })
+  await view.press({ text: /Which DB\?/ })
+  assert.ok(view.find({ text: 'Pick one' }))
+  await view.toggle({ label: 'Postgres' })
+  await view.toggle({ label: 'SQLite' })
+  await view.press({ text: 'Send' })
+  assert.deepEqual(sent, [{ kind: 'answers', picks: [['SQLite']], others: [], note: '' }])
+  assert.deepEqual(view.warnings, [])
   await view.unmount()
 })

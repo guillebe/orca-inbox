@@ -10,14 +10,15 @@ import {
   Code,
   EmptyState,
   Input,
+  Link,
   Heading,
   List,
   ListItem,
   Markdown,
   plugin,
-  RadioGroup,
   read,
   RelativeTime,
+  Separator,
   Row,
   set,
   Stack,
@@ -145,7 +146,8 @@ function choose(index: number, label: string, multi: boolean, on: boolean): void
   update(picks, (previous) => {
     const next = [...previous]
     const current = next[index] ?? []
-    next[index] = multi ? (on ? [...current, label] : current.filter((item) => item !== label)) : [label]
+    if (multi) next[index] = on ? [...current, label] : current.filter((item) => item !== label)
+    else next[index] = on ? [label] : []
     return next
   })
 }
@@ -157,31 +159,29 @@ export function setup(ctx: PanelContext): void {
 
 function QuestionField({ question, index }: { question: Question; index: number }) {
   const chosen = read(picks)[index] ?? []
+  // Checkboxes for both kinds: Orca's radio options cannot show a description. A single-choice
+  // question keeps one pick, as a radio would.
   return (
-    <Stack gap="xs">
-      {question.header ? <Badge tone="accent">{question.header}</Badge> : null}
-      <Markdown content={question.question} />
-      {question.multiSelect ? (
-        question.options.map((option) => (
+    <Stack gap="sm">
+      <Stack gap="xs">
+        <Row gap="xs">
+          {question.header ? <Badge tone="accent">{question.header}</Badge> : null}
+          <Text size="xs" muted>
+            {question.multiSelect ? 'Pick any' : 'Pick one'}
+          </Text>
+        </Row>
+        <Text weight="medium">{question.question}</Text>
+      </Stack>
+      <Stack gap="xs">
+        {question.options.map((option) => (
           <Checkbox
             label={option.label}
             description={option.description}
             checked={chosen.includes(option.label)}
-            onChange={(on) => choose(index, option.label, true, on)}
+            onChange={(on) => choose(index, option.label, question.multiSelect, on)}
           />
-        ))
-      ) : (
-        <RadioGroup
-          label={question.question}
-          labelHidden
-          value={chosen[0] ?? ''}
-          options={question.options.map((option) => ({
-            value: option.label,
-            label: option.description ? `${option.label} — ${option.description}` : option.label
-          }))}
-          onChange={(value) => choose(index, value, false, true)}
-        />
-      )}
+        ))}
+      </Stack>
       <Input
         label={question.multiSelect ? 'Other (added to your picks)' : 'Other (replaces your pick)'}
         placeholder="Type your own answer"
@@ -199,6 +199,7 @@ function OpenActions({ thread }: { thread: Thread }) {
   if (thread.body.kind === 'question') {
     return (
       <Stack gap="sm">
+        <Separator />
         <Textarea label="Note for the agent (optional)" value={text} rows={2} onChange={(value) => set(draft, value)} />
         <Row gap="xs">
           <Button
@@ -216,6 +217,7 @@ function OpenActions({ thread }: { thread: Thread }) {
   if (thread.body.kind === 'plan') {
     return (
       <Stack gap="sm">
+        <Separator />
         <Textarea label="Feedback" value={text} rows={3} onChange={(value) => set(draft, value)} />
         <Row gap="xs" wrap>
           <Button icon="check" tone="success" disabled={busy} onPress={() => respond({ kind: 'plan', decision: 'approve', feedback: read(draft) })}>
@@ -246,28 +248,29 @@ function ThreadView({ thread }: { thread: Thread }) {
   return (
     <Stack gap="md">
       <Row justify="between">
-        <Button variant="ghost" tooltip="Back to the list" onPress={back}>← Inbox</Button>
+        <Link onPress={back}>← Inbox</Link>
         <Text muted size="xs">
           <RelativeTime at={thread.createdAt} />
         </Text>
       </Row>
       {source ? (
-        <Row gap="xs" justify="between">
-          <Row gap="xs">
-            <Badge>{thread.origin.agent}</Badge>
-            <Text muted size="sm" truncate>{source}</Text>
-            {agentState ? <Badge tone={summary?.agentState === 'blocked' ? 'warning' : 'neutral'}>{agentState}</Badge> : null}
+        <Stack gap="xs">
+          <Text size="sm">{source}</Text>
+          <Row justify="between" wrap>
+            <Row gap="xs">
+              <Badge>{thread.origin.agent}</Badge>
+              {agentState ? <Badge tone={summary?.agentState === 'blocked' ? 'warning' : 'neutral'}>{agentState}</Badge> : null}
+            </Row>
+            <Button variant="outline" size="sm" icon="terminal" onPress={focusSession}>
+              Go to session
+            </Button>
           </Row>
-          <Button variant="outline" size="sm" icon="terminal" onPress={focusSession}>
-            Go to session
-          </Button>
-        </Row>
+        </Stack>
       ) : null}
+      <Separator />
       {body.kind === 'question' ? (
-        <Stack gap="md">
-          {body.questions.map((question, index) => (
-            QuestionField({ question, index })
-          ))}
+        <Stack gap="lg">
+          {body.questions.map((question, index) => QuestionField({ question, index }))}
         </Stack>
       ) : null}
       {body.kind === 'plan' ? (
