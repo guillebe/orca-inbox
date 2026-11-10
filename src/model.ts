@@ -481,11 +481,21 @@ export function workspaceLabel(workspaceId: string | null): string | null {
 
 /** "Session title · acme/web-app", whichever parts are known. */
 export function describeOrigin(origin: Origin): string {
-  const title = isGenericTitle(origin.sessionTitle) ? null : (origin.sessionTitle?.trim() ?? null)
+  const cleaned = origin.sessionTitle ? cleanTitle(origin.sessionTitle) : null
+  const title = isGenericTitle(cleaned) ? null : cleaned
   const parts = [title, workspaceLabel(origin.workspaceId)].filter(
     (part): part is string => Boolean(part)
   )
   return parts.length > 0 ? clip(parts.join(' · '), LIMITS.title) : 'Unknown session'
+}
+
+/**
+ * Drops the status glyphs agents put before their tab title (Claude Code animates a spinner
+ * such as ✳ or ◐ there). Without this a title would change on every frame and retitle every
+ * thread over and over.
+ */
+export function cleanTitle(title: string): string {
+  return title.replace(/^[^\p{L}\p{N}]+/u, '').trim()
 }
 
 /** Titles Orca shows before an agent names its task: they say nothing about the work. */
@@ -496,7 +506,8 @@ export const isGenericTitle = (title: string | null | undefined): boolean =>
  * The agent names its task a few seconds after it starts, often after it already asked: give
  * that terminal's open threads the new title. Null when nothing changes, so callers skip the write.
  */
-export function retitleThreads(threads: readonly Thread[], terminalId: string, title: string): Thread[] | null {
+export function retitleThreads(threads: readonly Thread[], terminalId: string, rawTitle: string): Thread[] | null {
+  const title = cleanTitle(rawTitle)
   if (isGenericTitle(title)) return null
   let changed = false
   const next = threads.map((thread) => {

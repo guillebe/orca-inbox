@@ -65,11 +65,16 @@ function switchToTerminal(terminalId: string): Promise<boolean> {
 async function terminalAlive(terminalId: string): Promise<boolean | null> {
   const answer = await runOrcaCli(terminalId, ['terminal', 'show'])
   if (!answer) return null
-  if (answer.ok) return true
+  // A closed tab stays known to Orca for a while, orphaned and no longer writable.
+  if (answer.ok) return answer.result?.terminal?.writable !== false && answer.result?.terminal?.orphaned !== true
   return answer.error?.code === 'terminal_handle_stale' ? false : null
 }
 
-type CliAnswer = { ok: boolean; error?: { code?: string } }
+type CliAnswer = {
+  ok: boolean
+  result?: { terminal?: { writable?: boolean; orphaned?: boolean } }
+  error?: { code?: string }
+}
 
 /** Runs `orca <args> --terminal <id> --json` and parses its answer; null when it could not run. */
 function runOrcaCli(terminalId: string, args: string[]): Promise<CliAnswer | null> {
@@ -163,7 +168,9 @@ export default function activate(orca: OrcaWorkerApi): void {
   // When each agent last went idle (waiting or done), to tell an answer typed in its terminal.
   // In memory: after a worker restart a terminal answer is only noticed from the next idle on.
   const idleSince = new Map<string, number>()
-  // Each agent's latest status, shown beside its open threads. Seeded from `agents.list` below.
+  // Each agent's latest status, shown beside its open threads. Seeded from `agents.list` at start,
+  // which often reports no terminal id: after a worker restart a state may show only once that
+  // agent's status changes again.
   const agentStates = new Map<string, AgentState>()
 
   /** Looks the title up after the hook has answered, so the hook never waits on it. */

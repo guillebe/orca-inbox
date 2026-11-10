@@ -1,6 +1,7 @@
 import { assert, test } from 'orca/testing'
 import {
   activeApprovalTerminals,
+  cleanTitle,
   allAnswered,
   agentStateLabel,
   CLOSED_RETENTION_MS,
@@ -221,4 +222,12 @@ test('summaries group by workspace with unknown ones last', () => {
     [['acme/api', ['b']], ['Other', ['a']]]
   )
   assert.equal(agentStateLabel('done'), 'agent waiting')
+})
+
+test('spinner glyphs never reach a title', () => {
+  assert.equal(cleanTitle('◐ Pick a test runner'), 'Pick a test runner')
+  assert.equal(cleanTitle('✳ Inbox test'), 'Inbox test')
+  const open = thread({ origin: { agent: 'claude', terminalId: 't1', workspaceId: null, sessionTitle: 'Inbox test' } })
+  assert.equal(retitleThreads([open], 't1', '◓ Inbox test'), null)
+  assert.equal(describeOrigin({ agent: 'claude', terminalId: 't', workspaceId: null, sessionTitle: '◑ Runner' }), 'Runner')
 })
