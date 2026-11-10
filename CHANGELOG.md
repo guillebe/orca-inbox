@@ -6,6 +6,11 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Answer from the agent's terminal as well as the panel: the agent restates the question with
+  numbered options, and the Inbox thread closes on its own once you reply there.
+
 ## [0.1.0] - 2026-11-10
 
 ### Added

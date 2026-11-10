@@ -20,7 +20,7 @@ test('queues a question, refuses the call and dedupes a retry', async () => {
   const worker = await mountWorker(main, { host })
   const first = await worker.hooks.fire('agent.tool.before', question)
   assert.equal(first.kind, 'deny')
-  if (first.kind === 'deny') assert.match(first.reason, /Do not ask again/)
+  if (first.kind === 'deny') assert.match(first.reason, /Do not call this tool again/)
   const retry = await worker.hooks.fire('agent.tool.before', question)
   assert.equal(retry.kind, 'deny')
   assert.equal(storedThreads(host).length, 1)
@@ -171,5 +171,31 @@ test('tools the inbox never captures pass without touching storage', async () =>
   const worker = await mountWorker(main, { host })
   assert.equal((await worker.hooks.fire('agent.tool.before', { ...question, tool: 'Read', input: {} })).kind, 'continue')
   assert.deepEqual(host.data().storage, {})
+  await worker.deactivate()
+})
+
+test('a question answered by typing in the terminal closes its thread', async () => {
+  const host = mockHost()
+  const worker = await mountWorker(main, { host })
+  const status = { workspaceId: 'w1', paneKey: 'p', terminalId: 't1', receivedAt: 1 }
+  await worker.hooks.fire('agent.tool.before', question)
+  // Still finishing its turn after the deny: not an answer.
+  await worker.emit('agent.status.changed', { ...status, state: 'working' })
+  assert.equal(storedThreads(host)[0]?.status.state, 'open')
+  await worker.emit('agent.status.changed', { ...status, state: 'waiting' })
+  await worker.emit('agent.status.changed', { ...status, state: 'working' })
+  assert.equal(storedThreads(host)[0]?.status.state, 'resolved')
+  await worker.deactivate()
+})
+
+test('a plan reviewed in the terminal lets its next ExitPlanMode stay there', async () => {
+  const host = mockHost()
+  const worker = await mountWorker(main, { host })
+  const status = { workspaceId: 'w1', paneKey: 'p', terminalId: 't1', receivedAt: 1 }
+  assert.equal((await worker.hooks.fire('agent.tool.before', plan)).kind, 'deny')
+  await worker.emit('agent.status.changed', { ...status, state: 'waiting' })
+  await worker.emit('agent.status.changed', { ...status, state: 'working' })
+  assert.equal(storedThreads(host)[0]?.status.state, 'resolved')
+  assert.equal((await worker.hooks.fire('agent.tool.before', plan)).kind, 'continue')
   await worker.deactivate()
 })

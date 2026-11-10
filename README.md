@@ -20,6 +20,9 @@ it as its next message.
   or send it back with feedback.
 - **Blocked agents** — while an agent waits on you in its terminal (a permission prompt, say), a
   thread reminds you, and closes itself once the agent moves on.
+- **Answer from anywhere** — the agent also repeats the question with numbered options in its
+  terminal, so you can reply there (from a phone, say) with just a number. The Inbox thread then
+  closes on its own.
 - **Context** — every thread shows the session's task and workspace; **Go to session** jumps to the
   agent's terminal.
 - **Status bar count and desktop notifications**, each switchable in Settings → Plugins → Inbox.
@@ -64,8 +67,11 @@ requests.
 1. A hook on `agent.tool.before` sees a Claude Code `AskUserQuestion` or `ExitPlanMode` call, stores
    it as a thread, and refuses the call with a reason that tells the agent the question is queued
    and the answer will arrive as its next message.
-2. You answer in the panel. The worker types the answer into the agent's terminal as one line,
-   prefixed with `[Orca Inbox]`.
+2. The agent ends its turn restating the question in its terminal, with numbered options.
+3. You answer in the panel, and the worker types the answer into the agent's terminal as one line,
+   prefixed with `[Orca Inbox]`. Or you answer in the terminal itself: when the agent, idle after
+   asking, starts working again without an Inbox reply, the thread closes as *answered in
+   terminal*. A plan reviewed that way keeps its next `ExitPlanMode` in the terminal too.
 
 Safeguards:
 

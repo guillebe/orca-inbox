@@ -184,13 +184,48 @@ export function classifyToolCall(
  * courtesy: a vague reason makes the agent call the tool again and open a second thread.
  */
 export function denyReason(thread: Thread): string {
+  // The person may be away from the panel (on a phone, say) and only see this terminal, so the
+  // agent restates what it asked here and takes an answer from either place.
+  const restate =
+    thread.body.kind === 'plan'
+      ? 'Then end your turn with a short message saying the plan is waiting for review, so the person can also reply right here.'
+      : 'Then end your turn with a short message that repeats the question and numbers its options, so the person can also answer right here, maybe with just a number.'
   const what = thread.body.kind === 'plan' ? 'Your plan was sent' : 'Your question was sent'
   return [
     `${what} to the person's Orca Inbox (thread ${thread.id}).`,
-    'Do not ask again and do not call this tool again for it.',
-    'Continue with any work that does not depend on the answer, or end your turn.',
-    'The answer will arrive as your next user message, prefixed with [Orca Inbox].'
+    'Do not call this tool again for it.',
+    'First finish any work that does not depend on the answer.',
+    restate,
+    'The answer arrives as your next user message: prefixed with [Orca Inbox], or typed directly in this terminal.'
   ].join(' ')
+}
+
+/**
+ * Open questions and plans a person answered by typing in the agent's terminal. The plugin never
+ * sees that text; it sees the agent go idle after asking (`idleSince`) and then start working
+ * again without an Inbox reply. Null when nothing closes. A prompt sent by something other than
+ * the person (an orchestrator, say) looks the same, and closes the thread too.
+ */
+export function resolveAnsweredInTerminal(
+  threads: readonly Thread[],
+  terminalId: string,
+  idleSince: number,
+  now: number
+): Thread[] | null {
+  let changed = false
+  const next = threads.map((thread) => {
+    if (
+      thread.status.state !== 'open' ||
+      thread.body.kind === 'attention' ||
+      thread.origin.terminalId !== terminalId ||
+      thread.createdAt > idleSince
+    ) {
+      return thread
+    }
+    changed = true
+    return { ...thread, status: { state: 'resolved' as const, at: now } }
+  })
+  return changed ? next : null
 }
 
 /** Text typed into a TUI: a newline would submit early, so everything goes on one line. */

@@ -40,6 +40,11 @@ const draft = atom('')
 const failure = atom<string | null>(null)
 const sending = atom(false)
 
+/** A question or plan is only `resolved` when the person answered it in the agent's terminal. */
+function stateLabel(kind: ThreadSummary['kind'], state: ThreadSummary['state']): string {
+  return state === 'resolved' && kind !== 'attention' ? 'answered in terminal' : state
+}
+
 const KIND_ICON = { question: 'lightbulb', plan: 'file-text', attention: 'warning' } as const
 
 const FAILURE_TEXT: Record<Exclude<RespondResult, { ok: true }>['reason'], string> = {
@@ -247,7 +252,7 @@ function ThreadView({ thread }: { thread: Thread }) {
           <Code block>{status.reply}</Code>
         </Stack>
       ) : null}
-      {status.state === 'resolved' || status.state === 'dismissed' ? <Badge>{status.state}</Badge> : null}
+      {status.state === 'resolved' || status.state === 'dismissed' ? <Badge>{stateLabel(body.kind, status.state)}</Badge> : null}
     </Stack>
   )
 }
@@ -266,7 +271,7 @@ function ThreadList({ items }: { items: ThreadSummary[] }) {
         <ListItem
           icon={KIND_ICON[item.kind]}
           title={item.title}
-          description={item.state === 'open' ? item.source : `${item.source} · ${item.state}`}
+          description={item.state === 'open' ? item.source : `${item.source} · ${stateLabel(item.kind, item.state)}`}
           onPress={() => openThread(item.id)}
         />
       ))}

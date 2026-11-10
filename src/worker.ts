@@ -20,6 +20,7 @@ import {
   readStringList,
   readThreads,
   replaceThread,
+  resolveAnsweredInTerminal,
   resolveAttention,
   retitleThreads,
   summarize,
@@ -134,6 +135,9 @@ export default function activate(orca: OrcaWorkerApi): void {
   // Tab titles by terminal, from agent status events. In memory only: a worker restart loses
   // them, and `agents.list` (the focused workspace's agents) fills the gap after the fact.
   const titles = new Map<string, string>()
+  // When each agent last went idle (waiting or done), to tell an answer typed in its terminal.
+  // In memory: after a worker restart a terminal answer is only noticed from the next idle on.
+  const idleSince = new Map<string, number>()
 
   /** Looks the title up after the hook has answered, so the hook never waits on it. */
   function fillTitleLater(terminalId: string): void {
@@ -211,6 +215,10 @@ export default function activate(orca: OrcaWorkerApi): void {
     const terminalId = event.terminalId
     if (!terminalId) return
     if (event.title) titles.set(terminalId, event.title)
+    // Read before this event updates it: when did the agent last stop and wait?
+    const wentIdleAt = idleSince.get(terminalId)
+    if (event.state === 'waiting' || event.state === 'done') idleSince.set(terminalId, Date.now())
+    else if (event.state === 'working') idleSince.delete(terminalId)
     // Returned so Orca (and tests) can wait for the write to land.
     return serially(async () => {
       // Tracked whatever the settings say: replies must never press Enter on a prompt.
@@ -225,6 +233,21 @@ export default function activate(orca: OrcaWorkerApi): void {
       // Any state but blocked means the prompt is gone (answered, refused or cancelled).
       if (event.state !== 'blocked' && hasOpenAttention(threads, terminalId)) {
         ;[threads, changed] = [resolveAttention(threads, terminalId, Date.now()), true]
+      }
+      // Waiting, then working again with the thread still open: answered by typing in the terminal.
+      const answeredThere =
+        event.state === 'working' && wentIdleAt !== undefined
+          ? resolveAnsweredInTerminal(threads, terminalId, wentIdleAt, Date.now())
+          : null
+      if (answeredThere) {
+        const planAnsweredThere = threads.some(
+          (thread) => thread.body.kind === 'plan' && thread.status.state === 'open' && thread.origin.terminalId === terminalId
+        )
+        ;[threads, changed] = [answeredThere, true]
+        // The person is reviewing this plan in the terminal: its next ExitPlanMode stays there.
+        if (planAnsweredThere) {
+          await orca.storage.set(APPROVED_PLANS, approve(await loadApprovals(), terminalId, Date.now()))
+        }
       }
       if (changed) await saveThreads(threads)
       if (event.state !== 'blocked' || hasOpenAttention(threads, terminalId)) return

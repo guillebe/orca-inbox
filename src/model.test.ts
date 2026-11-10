@@ -1,6 +1,7 @@
 import { assert, test } from 'orca/testing'
 import {
   activeApprovalTerminals,
+  denyReason,
   clip,
   LIMITS,
   markdownChunks,
@@ -179,4 +180,10 @@ test('long texts are clipped and long plans split, never dropped', () => {
   assert.ok(chunks.every((chunk) => chunk.length <= 1000))
   assert.equal(chunks.join('\n\n'), plan)
   assert.ok(markdownChunks('y'.repeat(2500), 1000).every((chunk) => chunk.length <= 1000))
+})
+
+test('the deny reason asks the agent to restate the question in its terminal', () => {
+  const reason = denyReason(thread({}))
+  assert.match(reason, /repeats the question and numbers its options/)
+  assert.match(reason, /typed directly in this terminal/)
 })
