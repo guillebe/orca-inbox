@@ -1,0 +1,37 @@
+name: Bug report
+description: Something in the Inbox does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a Claude Code agent in Orca
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: orca
+    attributes:
+      label: Orca version
+      placeholder: "1.4.249"
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+  - type: textarea
+    id: logs
+    attributes:
+      label: Plugin logs
+      description: Output of `orca plugin logs <plugin-key> --json`, with anything private removed.
+      render: json

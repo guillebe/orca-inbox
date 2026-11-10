@@ -1,0 +1,93 @@
+{
+  "manifestVersion": 2,
+  "id": "inbox",
+  "name": "Inbox",
+  "version": "0.1.0",
+  "description": "Questions and plans from Claude Code agents, answered when you have time while the agent keeps working.",
+  "license": "MIT",
+  "homepage": "https://github.com/guillebe/orca-inbox",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "inbox",
+        "title": "Inbox",
+        "icon": "bell",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "hooks": [
+      {
+        "event": "agent.tool.before"
+      }
+    ],
+    "events": [
+      {
+        "on": "agent.status.changed"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "open-threads",
+        "icon": "bell",
+        "text": "Inbox",
+        "tooltip": "Open threads in the Inbox panel (right sidebar)"
+      }
+    ],
+    "settings": [
+      {
+        "key": "captureQuestions",
+        "title": "Send Claude Code questions to the Inbox",
+        "description": "AskUserQuestion calls become Inbox threads; the agent keeps working and gets your answer as its next message.",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "capturePlans",
+        "title": "Send Claude Code plans to the Inbox",
+        "description": "ExitPlanMode calls become Inbox threads to approve or send back with feedback.",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "trackBlocked",
+        "title": "Open a thread when an agent is blocked",
+        "description": "A thread appears while an agent waits for you in its terminal (a permission prompt, say) and closes when it works again.",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "notify",
+        "title": "Desktop notification for new threads",
+        "type": "boolean",
+        "default": true
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "storage:own"
+    },
+    {
+      "kind": "settings:own"
+    },
+    {
+      "kind": "agent:read"
+    },
+    {
+      "kind": "terminal:send"
+    },
+    {
+      "kind": "notifications:show"
+    },
+    {
+      "kind": "workspace:write"
+    }
+  ]
+}
