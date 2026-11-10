@@ -11,6 +11,10 @@ All notable changes are listed here. The format follows
 - Answer from the agent's terminal as well as the panel: the agent restates the question with
   numbered options, and the Inbox thread closes on its own once you reply there.
 
+### Changed
+
+- The back button reads "← Inbox" instead of using an upward chevron.
+
 ## [0.1.0] - 2026-11-10
 
 ### Added

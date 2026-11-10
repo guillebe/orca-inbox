@@ -112,3 +112,18 @@ test('send stays disabled until every question has an answer', async () => {
   assert.equal(view.find({ role: 'button', text: 'Send' })?.props.disabled, false)
   await view.unmount()
 })
+
+test('the back button returns to the list', async () => {
+  const host = mockHost({
+    requests: {
+      'inbox.list': () => [{ id: 'q1', createdAt: 0, kind: 'question', title: 'Which DB?', source: 'DB work · acme/web-app', state: 'open' }],
+      'inbox.get': () => thread
+    }
+  })
+  const view = await mount(panel, { host })
+  await view.press({ text: /Which DB\?/ })
+  await view.press({ role: 'button', text: '← Inbox' })
+  assert.ok(view.find({ text: 'Open' }))
+  assert.deepEqual(view.warnings, [])
+  await view.unmount()
+})

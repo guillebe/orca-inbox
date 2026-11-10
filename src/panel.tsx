@@ -204,7 +204,7 @@ function ThreadView({ thread }: { thread: Thread }) {
   return (
     <Stack gap="md">
       <Row justify="between">
-        <Button variant="ghost" icon="collapse" onPress={back}>Inbox</Button>
+        <Button variant="ghost" tooltip="Back to the list" onPress={back}>← Inbox</Button>
         <Text muted size="xs">
           <RelativeTime at={thread.createdAt} />
         </Text>
